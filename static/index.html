@@ -41,9 +41,9 @@
     }
 
     #hud {
-      min-width: 210px;
-      font-size: 12.5px;
-      line-height: 1.9;
+      min-width: 220px;
+      font-size: 12px;
+      line-height: 1.8;
     }
 
     #hud h3 {
@@ -51,9 +51,12 @@
       text-transform: uppercase;
       letter-spacing: 1.5px;
       color: #58a6ff;
-      margin-bottom: 4px;
+      margin-bottom: 6px;
     }
 
+    .robot-entry { margin-bottom: 10px; padding-left: 8px; }
+    .robot-entry + .robot-entry { border-top: 1px solid rgba(255,255,255,0.08); padding-top: 8px; }
+    .robot-name { font-weight: bold; font-size: 11px; margin-bottom: 2px; }
     .hud-row { display: flex; justify-content: space-between; gap: 16px; }
     .hud-label { color: #8b949e; }
     .hud-value { color: #e6edf3; }
@@ -117,23 +120,8 @@
 <div id="ui">
   <!-- Left: robot state HUD -->
   <div class="panel" id="hud">
-    <h3>Robot State</h3>
-    <div class="hud-row">
-      <span class="hud-label">Position</span>
-      <span class="hud-value" id="h-pos">—</span>
-    </div>
-    <div class="hud-row">
-      <span class="hud-label">Rotation</span>
-      <span class="hud-value" id="h-rot">—</span>
-    </div>
-    <div class="hud-row">
-      <span class="hud-label">Holding</span>
-      <span class="hud-value" id="h-held">nothing</span>
-    </div>
-    <div class="hud-row">
-      <span class="hud-label">Status</span>
-      <span class="hud-value hud-idle" id="h-status">Idle</span>
-    </div>
+    <h3>Robots</h3>
+    <div id="hud-robots"></div>
   </div>
 
   <!-- Right: controls -->

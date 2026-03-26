@@ -8,22 +8,22 @@ Run with:
 
 API summary
 -----------
-GET  /state             — full simulation snapshot
-GET  /objects           — list of all non-robot objects
-POST /go_to_position    — move robot toward {x, y}
-POST /rotate            — rotate robot to absolute heading {angle} (degrees)
-POST /grab              — pick up nearest grabbable object in range
-POST /release           — drop currently held object
-POST /reset             — restore world to config.json initial state
-GET  /camera            — render one frame from the robot's on-board camera
-                          (requires a connected browser tab)
+GET  /state                  — full simulation snapshot (all robots + objects)
+GET  /objects                — list of all non-robot objects
+POST /go_to_position         — move robot toward {robot_id, x, y}
+POST /rotate                 — rotate robot to absolute heading {robot_id, angle}
+POST /grab                   — pick up nearest grabbable object {robot_id}
+POST /release                — drop currently held object {robot_id}
+POST /reset                  — restore world to config.json initial state
+GET  /camera?robot_id=<id>   — render one frame from a robot's on-board camera
+                               (requires a connected browser tab)
 """
 
 import asyncio
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -94,7 +94,6 @@ async def ws_endpoint(websocket: WebSocket):
     global _camera_future
     await websocket.accept()
     _clients.append(websocket)
-    # Push current state immediately so the viewer initialises without waiting
     await websocket.send_json({"type": "state", "data": world.get_state()})
     try:
         while True:
@@ -111,11 +110,16 @@ async def ws_endpoint(websocket: WebSocket):
 # --------------------------------------------------------------------------- #
 
 class PositionBody(BaseModel):
+    robot_id: str
     x: float
     y: float
 
 class RotateBody(BaseModel):
+    robot_id: str
     angle: float  # degrees, 0 = north (+Y), clockwise
+
+class RobotBody(BaseModel):
+    robot_id: str
 
 # --------------------------------------------------------------------------- #
 #  REST endpoints                                                              #
@@ -123,7 +127,7 @@ class RotateBody(BaseModel):
 
 @app.get("/state", summary="Full simulation snapshot")
 async def get_state():
-    """Returns robot pose, all object states, and world metadata."""
+    """Returns all robot poses, all object states, and world metadata."""
     return world.get_state()
 
 
@@ -133,44 +137,62 @@ async def get_objects():
     return world.get_objects()
 
 
-@app.post("/go_to_position", summary="Move robot to a position")
+@app.post("/go_to_position", summary="Move a robot to a position")
 async def go_to_position(body: PositionBody):
     """
-    Begin moving the robot toward (x, y).  Returns immediately.
-    The robot faces the target direction and moves at its configured speed.
-    Poll `/state` or subscribe via WebSocket to know when it arrives
-    (is_moving will be false).
+    Begin moving the specified robot toward (x, y).  Returns immediately.
+    Poll `is_moving` in /state (or subscribe via WebSocket) to detect arrival.
     """
-    world.robot.set_target(body.x, body.y)
-    return {"status": "ok", "target": {"x": body.x, "y": body.y}}
+    robot = world.robots.get(body.robot_id)
+    if not robot:
+        return JSONResponse(status_code=404, content={"error": f"Unknown robot: {body.robot_id}"})
+    robot.set_target(body.x, body.y)
+    return {"status": "ok", "robot_id": body.robot_id, "target": {"x": body.x, "y": body.y}}
 
 
-@app.post("/rotate", summary="Rotate robot to an absolute heading")
+@app.post("/rotate", summary="Rotate a robot to an absolute heading")
 async def rotate(body: RotateBody):
     """
     Begin rotating to the given absolute heading in degrees.
     0 = north (+Y), 90 = east (+X), increases clockwise.
     Returns immediately; poll `is_rotating` in /state to detect completion.
     """
-    world.robot.set_rotation_target(body.angle)
-    return {"status": "ok", "target_angle": body.angle}
+    robot = world.robots.get(body.robot_id)
+    if not robot:
+        return JSONResponse(status_code=404, content={"error": f"Unknown robot: {body.robot_id}"})
+    robot.set_rotation_target(body.angle)
+    return {"status": "ok", "robot_id": body.robot_id, "target_angle": body.angle}
 
 
 @app.post("/grab", summary="Grab nearest grabbable object")
-async def grab():
-    """
-    Attempt to pick up the closest grabbable object within grab_range.
-    The object will follow the robot until released.
-    """
-    return world.grab()
+async def grab(body: RobotBody):
+    """Attempt to pick up the closest grabbable object within grab_range."""
+    return world.grab(body.robot_id)
 
 
 @app.post("/release", summary="Release currently held object")
-async def release():
+async def release(body: RobotBody):
     """
     Drop the currently held object slightly in front of the robot.
+    If the drop position falls inside a matching DropZone, delivery is registered.
     """
-    return world.release()
+    return world.release(body.robot_id)
+
+
+@app.get("/visible_objects", summary="Objects visible in a robot's camera FOV")
+async def visible_objects(robot_id: str = Query(..., description="ID of the observing robot")):
+    """
+    Returns all non-wall objects (and other robots) whose centre lies within
+    the robot's camera FOV cone and within camera_range distance.
+
+    Occlusion by walls is not modelled — purely angular + distance check.
+
+    Each entry: { id, type, x, y, distance, angle }
+    where `angle` is degrees from the centre of the FOV (0 = straight ahead).
+    """
+    if robot_id not in world.robots:
+        return JSONResponse(status_code=404, content={"error": f"Unknown robot: {robot_id}"})
+    return world.get_visible_objects(robot_id)
 
 
 @app.post("/reset", summary="Reset world to initial config state")
@@ -181,15 +203,11 @@ async def reset():
     return {"status": "ok"}
 
 
-@app.get("/camera", summary="Render one frame from the robot's camera")
-async def get_camera():
+@app.get("/camera", summary="Render one frame from a robot's camera")
+async def get_camera(robot_id: str = Query(..., description="ID of the robot whose camera to use")):
     """
-    Requests a single rendered frame from the robot's on-board perspective
-    camera.  The browser renders the scene from the robot's POV and returns
-    the image as a base64-encoded PNG string.
-
-    Requires at least one browser tab connected via WebSocket.
-    Times out after 5 seconds if no frame is received.
+    Requests a single rendered frame from the specified robot's on-board
+    perspective camera.  Requires at least one browser tab connected.
 
     Response: { "image": "<base64 PNG>" }
     """
@@ -200,13 +218,14 @@ async def get_camera():
             status_code=503,
             content={"error": "No viewer connected — open the browser tab first"},
         )
+    if robot_id not in world.robots:
+        return JSONResponse(status_code=404, content={"error": f"Unknown robot: {robot_id}"})
 
-    # Cancel any stale pending request
     if _camera_future and not _camera_future.done():
         _camera_future.cancel()
 
     _camera_future = asyncio.get_running_loop().create_future()
-    await _broadcast({"type": "camera_request"})
+    await _broadcast({"type": "camera_request", "robot_id": robot_id})
 
     try:
         image_data = await asyncio.wait_for(_camera_future, timeout=5.0)

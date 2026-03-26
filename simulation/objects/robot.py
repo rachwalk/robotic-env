@@ -27,8 +27,12 @@ class Robot(SimObject):
         rotation_speed: float = 180.0,
         grab_range: float = 1.5,
         camera_fov: float = 60.0,
+        camera_range: float = 15.0,
+        color: str = "#1565C0",
     ):
         super().__init__(id, x, y)
+        self.color = color
+        self.camera_range = camera_range
         self.rotation = rotation % 360          # degrees
         self.speed = speed                      # world-units / sec
         self.rotation_speed = rotation_speed    # degrees / sec
@@ -56,6 +60,7 @@ class Robot(SimObject):
         return {
             "id": self.id,
             "type": self.type,
+            "color": self.color,
             "x": self.x,
             "y": self.y,
             "rotation": self.rotation,
@@ -63,6 +68,7 @@ class Robot(SimObject):
             "rotation_speed": self.rotation_speed,
             "grab_range": self.grab_range,
             "camera_fov": self.camera_fov,
+            "camera_range": self.camera_range,
             "held_object": self.held_object,
             "is_moving": self.is_moving,
             "is_rotating": self.is_rotating,

@@ -1,36 +1,49 @@
 {
   "world": {
-    "size_x": 20,
-    "size_y": 20,
+    "size_x": 40,
+    "size_y": 40,
     "background_color": "#87CEEB"
   },
-  "robot": {
-    "id": "robot",
-    "x": 0,
-    "y": 0,
-    "rotation": 0,
-    "speed": 3.0,
-    "rotation_speed": 180.0,
-    "grab_range": 1.5,
-    "camera_fov": 60.0
-  },
-  "objects": [
+  "robots": [
     {
-      "type": "wall",
-      "id": "wall1",
-      "x": 5,
-      "y": 0,
-      "width": 1,
-      "height": 6,
-      "color": "#795548"
+      "id": "robot_red",
+      "color": "#E53935",
+      "x": 8,
+      "y": -14,
+      "rotation": 180,
+      "speed": 3.0,
+      "rotation_speed": 180.0,
+      "grab_range": 1.5,
+      "camera_fov": 60.0,
+      "camera_range": 15.0
     },
     {
-      "type": "ball",
-      "id": "ball1",
-      "x": -3,
-      "y": 3,
-      "radius": 0.3,
-      "color": "#F44336"
+      "id": "robot_blue",
+      "color": "#1E88E5",
+      "x": -8,
+      "y": -14,
+      "rotation": 180,
+      "speed": 3.0,
+      "rotation_speed": 180.0,
+      "grab_range": 1.5,
+      "camera_fov": 60.0
     }
+  ],
+  "objects": [
+    { "type": "ball", "id": "ball_red",  "x": -8, "y": 2, "radius": 0.35, "color": "#E53935" },
+    { "type": "ball", "id": "ball_blue", "x":  8, "y": 2, "radius": 0.35, "color": "#1E88E5" },
+
+    { "type": "dropzone", "id": "dz_red",  "x": -8, "y": 14, "width": 3, "height": 3, "color": "#E53935", "accepted_color": "#E53935" },
+    { "type": "dropzone", "id": "dz_blue", "x":  8, "y": 14, "width": 3, "height": 3, "color": "#1E88E5", "accepted_color": "#1E88E5" },
+
+    { "type": "wall", "id": "w_bot_L",  "x": -15, "y": -6, "width": 10, "height": 1, "color": "#6D4C41" },
+    { "type": "wall", "id": "w_bot_M",  "x":   0, "y": -6, "width": 12, "height": 1, "color": "#6D4C41" },
+    { "type": "wall", "id": "w_bot_R",  "x":  15, "y": -6, "width": 10, "height": 1, "color": "#6D4C41" },
+
+    { "type": "wall", "id": "w_top_L",  "x": -15, "y":  6, "width": 10, "height": 1, "color": "#6D4C41" },
+    { "type": "wall", "id": "w_top_M",  "x":   0, "y":  6, "width": 12, "height": 1, "color": "#6D4C41" },
+    { "type": "wall", "id": "w_top_R",  "x":  15, "y":  6, "width": 10, "height": 1, "color": "#6D4C41" },
+
+    { "type": "wall", "id": "w_center", "x": 0, "y": 0, "width": 1, "height": 8, "color": "#6D4C41" }
   ]
 }

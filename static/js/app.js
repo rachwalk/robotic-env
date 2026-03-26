@@ -6,8 +6,8 @@
  *
  * Coordinate mapping
  * ------------------
- *   sim (x, y)  →  Three.js (x, 0, y)    (Y-up world, flat XZ plane)
- *   sim rotation 0 = north (+Z in Three.js), clockwise
+ *   sim (x, y)  →  Three.js (x, 0, -y)   (Y-up world, north = -Z)
+ *   sim rotation 0 = north, 90 = east, clockwise
  */
 
 import * as THREE from 'three';
@@ -28,7 +28,7 @@ container.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
-scene.fog = new THREE.Fog(0x87ceeb, 40, 80);
+scene.fog = new THREE.Fog(0x87ceeb, 60, 120);
 
 // =========================================================================== //
 //  Viewer cameras                                                              //
@@ -36,23 +36,21 @@ scene.fog = new THREE.Fog(0x87ceeb, 40, 80);
 
 const aspect = () => window.innerWidth / window.innerHeight;
 
-// Perspective (angled) camera
-const perspCam = new THREE.PerspectiveCamera(55, aspect(), 0.1, 200);
-perspCam.position.set(0, 18, 18);
+const perspCam = new THREE.PerspectiveCamera(55, aspect(), 0.1, 300);
+perspCam.position.set(0, 30, 30);
 perspCam.lookAt(0, 0, 0);
 
-// Orthographic (top-down) camera — sized on first world state
-const orthoCam = new THREE.OrthographicCamera(-10, 10, 10, -10, 0.1, 200);
-orthoCam.position.set(0, 50, 0);
+const orthoCam = new THREE.OrthographicCamera(-10, 10, 10, -10, 0.1, 300);
+orthoCam.position.set(0, 80, 0);
+orthoCam.up.set(0, 0, -1);
 orthoCam.lookAt(0, 0, 0);
 
-// OrbitControls only active in angled mode
 const controls = new OrbitControls(perspCam, renderer.domElement);
 controls.target.set(0, 0, 0);
 controls.maxPolarAngle = Math.PI / 2.1;
 controls.enabled = false;
 
-let viewMode = 'topdown'; // 'topdown' | 'angled'
+let viewMode = 'topdown';
 const activeCamera = () => viewMode === 'topdown' ? orthoCam : perspCam;
 
 // =========================================================================== //
@@ -69,15 +67,15 @@ const robotRT = new THREE.WebGLRenderTarget(640, 480);
 scene.add(new THREE.AmbientLight(0xffffff, 0.55));
 
 const sun = new THREE.DirectionalLight(0xffffff, 0.9);
-sun.position.set(8, 20, 8);
+sun.position.set(8, 30, -15);
 sun.castShadow = true;
-sun.shadow.mapSize.set(1024, 1024);
+sun.shadow.mapSize.set(2048, 2048);
 sun.shadow.camera.near = 0.5;
-sun.shadow.camera.far = 60;
-sun.shadow.camera.left = -15;
-sun.shadow.camera.right = 15;
-sun.shadow.camera.top = 15;
-sun.shadow.camera.bottom = -15;
+sun.shadow.camera.far = 100;
+sun.shadow.camera.left = -25;
+sun.shadow.camera.right = 25;
+sun.shadow.camera.top = 25;
+sun.shadow.camera.bottom = -25;
 scene.add(sun);
 
 scene.add(new THREE.HemisphereLight(0x87ceeb, 0x4a7c59, 0.3));
@@ -91,15 +89,11 @@ scene.add(groundGroup);
 let currentWorldSize = null;
 
 function buildGround(sizeX, sizeY, bgColor) {
-  // Remove previous ground geometry
-  while (groundGroup.children.length) {
-    groundGroup.remove(groundGroup.children[0]);
-  }
+  while (groundGroup.children.length) groundGroup.remove(groundGroup.children[0]);
 
   scene.background = new THREE.Color(bgColor);
   scene.fog.color = new THREE.Color(bgColor);
 
-  // Floor
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(sizeX, sizeY),
     new THREE.MeshLambertMaterial({ color: 0x5a9e47 })
@@ -108,40 +102,35 @@ function buildGround(sizeX, sizeY, bgColor) {
   floor.receiveShadow = true;
   groundGroup.add(floor);
 
-  // Grid
   const gridSize = Math.max(sizeX, sizeY);
   const grid = new THREE.GridHelper(gridSize, gridSize, 0x000000, 0x2a4a2a);
   grid.material.opacity = 0.25;
   grid.material.transparent = true;
   groundGroup.add(grid);
 
-  // World boundary outline
   const edgeGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(sizeX, 0.02, sizeY));
   const edgeMat = new THREE.LineBasicMaterial({ color: 0xffffff, opacity: 0.35, transparent: true });
   groundGroup.add(new THREE.LineSegments(edgeGeo, edgeMat));
 
-  // Update cameras for new world size
   positionViewerCameras(sizeX, sizeY);
 }
 
 function positionViewerCameras(sizeX, sizeY) {
   const maxS = Math.max(sizeX, sizeY);
 
-  // Perspective: angled view
   perspCam.position.set(0, maxS * 0.9, maxS * 0.9);
   perspCam.lookAt(0, 0, 0);
   controls.target.set(0, 0, 0);
   controls.update();
 
-  // Ortho: top-down, fits the world with a small margin
   const half = maxS / 2 * 1.15;
   const a = aspect();
   orthoCam.left   = -half * a;
   orthoCam.right  =  half * a;
   orthoCam.top    =  half;
   orthoCam.bottom = -half;
-  orthoCam.position.set(0, 50, 0);
-  orthoCam.up.set(0, 0, -1);  // prevents degenerate lookAt; puts sim-north (+y → -Z) at top of screen
+  orthoCam.position.set(0, 80, 0);
+  orthoCam.up.set(0, 0, -1);
   orthoCam.lookAt(0, 0, 0);
   orthoCam.updateProjectionMatrix();
 }
@@ -150,42 +139,41 @@ function positionViewerCameras(sizeX, sizeY) {
 //  Object mesh factories                                                       //
 // =========================================================================== //
 
-function makeRobotMesh() {
+function makeRobotMesh(color) {
   const g = new THREE.Group();
 
-  // Body — blue disc
   const body = new THREE.Mesh(
     new THREE.CylinderGeometry(0.38, 0.38, 0.22, 24),
-    new THREE.MeshLambertMaterial({ color: 0x1565c0 })
+    new THREE.MeshLambertMaterial({ color: new THREE.Color(color) })
   );
   body.position.y = 0.11;
   body.castShadow = true;
   g.add(body);
 
-  // Direction arrow — yellow cone pointing +Z (forward)
+  // Direction arrow — yellow cone pointing -Z (north at rotation=0)
   const arrow = new THREE.Mesh(
     new THREE.ConeGeometry(0.11, 0.32, 8),
     new THREE.MeshLambertMaterial({ color: 0xfdd835 })
   );
-  arrow.position.set(0, 0.24, 0.32);
-  arrow.rotation.x = Math.PI / 2;
+  arrow.position.set(0, 0.24, -0.32);
+  arrow.rotation.x = -Math.PI / 2;
   arrow.castShadow = true;
   g.add(arrow);
 
-  // Camera body — dark box on top-front
+  // Camera body
   const camBody = new THREE.Mesh(
     new THREE.BoxGeometry(0.17, 0.09, 0.11),
     new THREE.MeshLambertMaterial({ color: 0x212121 })
   );
-  camBody.position.set(0, 0.28, 0.18);
+  camBody.position.set(0, 0.28, -0.18);
   g.add(camBody);
 
-  // Camera lens — small cyan cylinder
+  // Lens
   const lens = new THREE.Mesh(
     new THREE.CylinderGeometry(0.035, 0.035, 0.055, 8),
     new THREE.MeshLambertMaterial({ color: 0x29b6f6 })
   );
-  lens.position.set(0, 0.28, 0.245);
+  lens.position.set(0, 0.28, -0.245);
   lens.rotation.x = Math.PI / 2;
   g.add(lens);
 
@@ -211,34 +199,70 @@ function makeBallMesh(obj) {
   return mesh;
 }
 
-// Map type string → factory function.  Add entries here for new object types.
+function makeDropZoneMesh(obj) {
+  const g = new THREE.Group();
+  const w = obj.width, h = obj.height;
+
+  // Translucent fill
+  const fill = new THREE.Mesh(
+    new THREE.PlaneGeometry(w, h),
+    new THREE.MeshBasicMaterial({
+      color: new THREE.Color(obj.color),
+      transparent: true,
+      opacity: 0.35,
+      depthWrite: false,
+    })
+  );
+  fill.rotation.x = -Math.PI / 2;
+  fill.position.y = 0.01;
+  g.add(fill);
+
+  // Border outline
+  const pts = [
+    new THREE.Vector3(-w / 2, 0, -h / 2),
+    new THREE.Vector3( w / 2, 0, -h / 2),
+    new THREE.Vector3( w / 2, 0,  h / 2),
+    new THREE.Vector3(-w / 2, 0,  h / 2),
+    new THREE.Vector3(-w / 2, 0, -h / 2),
+  ];
+  const border = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({ color: new THREE.Color(obj.color) })
+  );
+  border.position.y = 0.02;
+  g.add(border);
+
+  return g;
+}
+
+// Map type → factory.  Add entries here for new object types.
 const MESH_FACTORY = {
-  wall: makeWallMesh,
-  ball: makeBallMesh,
+  wall:     makeWallMesh,
+  ball:     makeBallMesh,
+  dropzone: makeDropZoneMesh,
 };
 
 // =========================================================================== //
 //  Scene mesh registry                                                         //
 // =========================================================================== //
 
-const meshes = {}; // id → THREE.Object3D
+const meshes = {}; // key → THREE.Object3D
 
-function getOrCreateMesh(obj) {
-  if (!meshes[obj.id]) {
-    const factory = MESH_FACTORY[obj.type];
-    if (!factory) return null;
-    const mesh = factory(obj);
-    meshes[obj.id] = mesh;
+function getOrCreateMesh(key, factory, ...args) {
+  if (!meshes[key]) {
+    const mesh = factory(...args);
+    if (!mesh) return null;
+    meshes[key] = mesh;
     scene.add(mesh);
   }
-  return meshes[obj.id];
+  return meshes[key];
 }
 
-function removeStaleMeshes(seenIds) {
-  for (const id of Object.keys(meshes)) {
-    if (!seenIds.has(id)) {
-      scene.remove(meshes[id]);
-      delete meshes[id];
+function removeStaleMeshes(seenKeys) {
+  for (const key of Object.keys(meshes)) {
+    if (!seenKeys.has(key)) {
+      scene.remove(meshes[key]);
+      delete meshes[key];
     }
   }
 }
@@ -247,10 +271,11 @@ function removeStaleMeshes(seenIds) {
 //  State → scene update                                                        //
 // =========================================================================== //
 
-function applyState(state) {
-  const { world, robot, objects } = state;
+const robotStates = {}; // robot_id → latest robot state dict
 
-  // Rebuild ground when world size changes
+function applyState(state) {
+  const { world, robots, objects } = state;
+
   if (
     !currentWorldSize ||
     currentWorldSize.x !== world.size_x ||
@@ -260,100 +285,118 @@ function applyState(state) {
     currentWorldSize = { x: world.size_x, y: world.size_y };
   }
 
-  // ---- Robot ----
-  if (!meshes['__robot__']) {
-    meshes['__robot__'] = makeRobotMesh();
-    scene.add(meshes['__robot__']);
+  const seen = new Set();
+
+  // ---- Robots ----
+  for (const robot of robots) {
+    robotStates[robot.id] = robot;
+    const key = `__robot__${robot.id}`;
+    seen.add(key);
+
+    const rm = getOrCreateMesh(key, makeRobotMesh, robot.color);
+    if (!rm) continue;
+    rm.position.set(robot.x, 0.0, -robot.y);
+    // rotation.y = θ rotates +Z to (sinθ, 0, cosθ).
+    // Arrow points -Z at rest, so θ = π - sim_rot achieves: rot=0→-Z(north), rot=90→+X(east)
+    rm.rotation.y = Math.PI - THREE.MathUtils.degToRad(robot.rotation);
   }
-  const rm = meshes['__robot__'];
-  rm.position.set(robot.x, 0.0, -robot.y);
-  rm.rotation.y = Math.PI - THREE.MathUtils.degToRad(robot.rotation);
 
   // ---- World objects ----
-  const seen = new Set(['__robot__']);
-
   for (const obj of objects) {
     seen.add(obj.id);
-    const mesh = getOrCreateMesh(obj);
+    const factory = MESH_FACTORY[obj.type];
+    if (!factory) continue;
+
+    const mesh = getOrCreateMesh(obj.id, factory, obj);
     if (!mesh) continue;
 
     if (obj.type === 'wall') {
       mesh.position.set(obj.x, 0.6, -obj.y);
     } else if (obj.type === 'ball') {
       const r = obj.radius ?? 0.3;
-      // Lift ball slightly when grabbed so it visually floats above the robot
-      const yOffset = obj.grabbed ? 0.5 : r;
-      mesh.position.set(obj.x, yOffset, -obj.y);
+      mesh.position.set(obj.x, obj.grabbed ? 0.5 : r, -obj.y);
+    } else if (obj.type === 'dropzone') {
+      mesh.position.set(obj.x, 0, -obj.y);
+      // Brighten fill when delivered
+      mesh.children[0].material.opacity = obj.delivered ? 0.75 : 0.35;
     }
   }
 
   removeStaleMeshes(seen);
 
-  // ---- Robot's on-board camera ----
-  const rotRad = THREE.MathUtils.degToRad(robot.rotation);
-  const fwdX = Math.sin(rotRad);
-  const fwdZ = -Math.cos(rotRad);  // north = -Z in Three.js
-  const camHeight = 0.32;
-  const camOffset = 1.2;
-  robotCam.position.set(robot.x + fwdX * camOffset, camHeight, -robot.y + fwdZ * camOffset);
-  robotCam.lookAt(robot.x + fwdX * 10, camHeight, -robot.y + fwdZ * 10);
-  robotCam.fov = robot.camera_fov ?? 60;
-  robotCam.updateProjectionMatrix();
-
   // ---- HUD ----
-  document.getElementById('h-pos').textContent =
-    `(${robot.x.toFixed(2)}, ${robot.y.toFixed(2)})`;
-  document.getElementById('h-rot').textContent =
-    `${robot.rotation.toFixed(1)}°`;
-  document.getElementById('h-held').textContent =
-    robot.held_object ?? 'nothing';
+  updateHUD(robots);
+}
 
-  const statusEl = document.getElementById('h-status');
-  if (robot.is_moving) {
-    statusEl.textContent = 'Moving';
-    statusEl.className = 'hud-value hud-moving';
-  } else if (robot.is_rotating) {
-    statusEl.textContent = 'Rotating';
-    statusEl.className = 'hud-value hud-moving';
-  } else {
-    statusEl.textContent = 'Idle';
-    statusEl.className = 'hud-value hud-idle';
-  }
+// =========================================================================== //
+//  HUD                                                                         //
+// =========================================================================== //
+
+function updateHUD(robots) {
+  document.getElementById('hud-robots').innerHTML = robots.map(robot => {
+    const moving = robot.is_moving || robot.is_rotating;
+    const stateLabel = robot.is_moving ? 'Moving' : robot.is_rotating ? 'Rotating' : 'Idle';
+    return `
+      <div class="robot-entry">
+        <div class="robot-name" style="color:${robot.color}">${robot.id}</div>
+        <div class="hud-row">
+          <span class="hud-label">Pos</span>
+          <span class="hud-value">(${robot.x.toFixed(1)}, ${robot.y.toFixed(1)})</span>
+        </div>
+        <div class="hud-row">
+          <span class="hud-label">Rot</span>
+          <span class="hud-value">${robot.rotation.toFixed(0)}°</span>
+        </div>
+        <div class="hud-row">
+          <span class="hud-label">Holds</span>
+          <span class="hud-value">${robot.held_object ?? '—'}</span>
+        </div>
+        <div class="hud-row">
+          <span class="hud-label">State</span>
+          <span class="${moving ? 'hud-moving' : 'hud-idle'}">${stateLabel}</span>
+        </div>
+      </div>`;
+  }).join('');
 }
 
 // =========================================================================== //
 //  Robot camera rendering                                                      //
 // =========================================================================== //
 
-function renderRobotCamera() {
-  const w = robotRT.width;
-  const h = robotRT.height;
+function renderRobotCamera(robotId) {
+  const robot = robotStates[robotId] ?? Object.values(robotStates)[0];
+  if (!robot) return;
 
+  const rotRad = THREE.MathUtils.degToRad(robot.rotation);
+  const fwdX =  Math.sin(rotRad);
+  const fwdZ = -Math.cos(rotRad);
+  const camHeight = 0.32;
+
+  robotCam.position.set(robot.x, camHeight, -robot.y);
+  robotCam.lookAt(robot.x + fwdX * 10, camHeight, -robot.y + fwdZ * 10);
+  robotCam.fov = robot.camera_fov ?? 60;
+  robotCam.updateProjectionMatrix();
+
+  const w = robotRT.width, h = robotRT.height;
   renderer.setRenderTarget(robotRT);
   renderer.render(scene, robotCam);
   renderer.setRenderTarget(null);
 
-  // Read pixels (WebGL is bottom-up → flip vertically)
   const pixels = new Uint8Array(w * h * 4);
   renderer.readRenderTargetPixels(robotRT, 0, 0, w, h, pixels);
 
+  // Flip vertically (WebGL is bottom-up)
   const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
+  canvas.width = w; canvas.height = h;
   const ctx = canvas.getContext('2d');
   const imgData = ctx.createImageData(w, h);
-
   for (let row = 0; row < h; row++) {
     const srcRow = h - 1 - row;
-    imgData.data.set(
-      pixels.subarray(srcRow * w * 4, (srcRow + 1) * w * 4),
-      row * w * 4
-    );
+    imgData.data.set(pixels.subarray(srcRow * w * 4, (srcRow + 1) * w * 4), row * w * 4);
   }
   ctx.putImageData(imgData, 0, 0);
 
-  const base64 = canvas.toDataURL('image/png').split(',')[1];
-  ws.send(JSON.stringify({ type: 'camera_frame', data: base64 }));
+  ws.send(JSON.stringify({ type: 'camera_frame', data: canvas.toDataURL('image/png').split(',')[1] }));
 }
 
 // =========================================================================== //
@@ -366,15 +409,13 @@ function connect() {
   ws = new WebSocket(`ws://${window.location.host}/ws`);
 
   ws.addEventListener('open', () => {
-    const el = document.getElementById('status');
-    el.textContent = 'Connected';
-    el.className = 'connected';
+    document.getElementById('status').textContent = 'Connected';
+    document.getElementById('status').className = 'connected';
   });
 
   ws.addEventListener('close', () => {
-    const el = document.getElementById('status');
-    el.textContent = 'Disconnected';
-    el.className = 'disconnected';
+    document.getElementById('status').textContent = 'Disconnected';
+    document.getElementById('status').className = 'disconnected';
     setTimeout(connect, 2000);
   });
 
@@ -383,7 +424,7 @@ function connect() {
     if (msg.type === 'state') {
       applyState(msg.data);
     } else if (msg.type === 'camera_request') {
-      renderRobotCamera();
+      renderRobotCamera(msg.robot_id);
     }
   });
 }
@@ -405,9 +446,7 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
   perspCam.aspect = aspect();
   perspCam.updateProjectionMatrix();
-  if (currentWorldSize) {
-    positionViewerCameras(currentWorldSize.x, currentWorldSize.y);
-  }
+  if (currentWorldSize) positionViewerCameras(currentWorldSize.x, currentWorldSize.y);
 });
 
 // =========================================================================== //
